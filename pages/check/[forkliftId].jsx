@@ -132,6 +132,64 @@ function ToggleGroup({ value, onChange, highlighted }) {
   );
 }
 
+// ─── Diagram annotation canvas ────────────────────────────────────────────────
+function DiagramCanvas({ bgCanvasRef, drawCanvasRef, onClear }) {
+  const isPointerDown = useRef(false);
+  const lastPos       = useRef({ x: 0, y: 0 });
+
+  function getPos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const src  = e.touches ? e.touches[0] : e;
+    return {
+      x: (src.clientX - rect.left) * (canvas.width  / rect.width),
+      y: (src.clientY - rect.top)  * (canvas.height / rect.height),
+    };
+  }
+
+  function onDown(e) {
+    e.preventDefault();
+    isPointerDown.current = true;
+    lastPos.current = getPos(drawCanvasRef.current, e);
+  }
+
+  function onMove(e) {
+    e.preventDefault();
+    if (!isPointerDown.current) return;
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(canvas, e);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = "#d02a35";
+    ctx.lineWidth   = 3;
+    ctx.lineCap     = "round";
+    ctx.lineJoin    = "round";
+    ctx.stroke();
+    lastPos.current = pos;
+  }
+
+  function onUp() { isPointerDown.current = false; }
+
+  return (
+    <div>
+      <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 10, overflow: "hidden", background: "#f9fafb", touchAction: "none" }}>
+        <canvas ref={bgCanvasRef} style={{ display: "block", width: "100%", userSelect: "none" }} />
+        <canvas ref={drawCanvasRef}
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", cursor: "crosshair", touchAction: "none" }}
+          onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+          onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+        />
+      </div>
+      <button onClick={onClear}
+        style={{ marginTop: "0.4rem", padding: "0.35rem 0.9rem", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: "0.82rem", cursor: "pointer" }}>
+        Clear Drawing
+      </button>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function CheckPage({ forkliftId }) {
   const [pageStatus, setPageStatus] = useState("loading");
@@ -157,14 +215,20 @@ export default function CheckPage({ forkliftId }) {
   );
   const [funcHighlighted, setFuncHighlighted] = useState([]);
 
-  // Step 3
-  const [faultDetails, setFaultDetails]   = useState({});
-  const [photoFile, setPhotoFile]         = useState(null);
-  const [sigDataUrl, setSigDataUrl]       = useState(null);
-  const [step3Error, setStep3Error]       = useState("");
-  const photoInputRef = useRef(null);
-  const canvasRef     = useRef(null);
-  const sigPadRef     = useRef(null);
+  // Step 3 — fault details only
+  const [faultDetails, setFaultDetails] = useState({});
+
+  // Step 4 — comments, diagram, photo, signature
+  const [additionalComments, setAdditionalComments] = useState("");
+  const [photoFile, setPhotoFile]   = useState(null);
+  const [sigDataUrl, setSigDataUrl] = useState(null);
+  const [submitError, setSubmitError] = useState("");
+
+  const photoInputRef  = useRef(null);
+  const canvasRef      = useRef(null); // signature canvas
+  const sigPadRef      = useRef(null); // SignaturePad instance
+  const bgCanvasRef    = useRef(null); // diagram background (PDF render)
+  const drawCanvasRef  = useRef(null); // diagram drawing overlay
 
   const [doneEntry, setDoneEntry] = useState(null);
 
@@ -199,9 +263,9 @@ export default function CheckPage({ forkliftId }) {
     load();
   }, [forkliftId]);
 
-  // ── Signature pad init ────────────────────────────────────────────────────
+  // ── Signature pad init (step 4) ───────────────────────────────────────────
   useEffect(() => {
-    if (step !== 3) return;
+    if (step !== 4) return;
     let raf = requestAnimationFrame(() => {
       if (!canvasRef.current) return;
       import("signature_pad").then(({ default: SignaturePad }) => {
@@ -221,7 +285,66 @@ export default function CheckPage({ forkliftId }) {
     };
   }, [step]);
 
-  // ── Step 1 → 2 validation ──────────────────────────────────────────────────
+  // ── Diagram PDF render (step 4) ───────────────────────────────────────────
+  useEffect(() => {
+    if (step !== 4) return;
+    let cancelled = false;
+
+    (async () => {
+      const bg   = bgCanvasRef.current;
+      const draw = drawCanvasRef.current;
+      if (!bg || !draw) return;
+
+      try {
+        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
+        if (cancelled) return;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+        const pdfTask = pdfjsLib.getDocument("/diagram.pdf");
+        const pdf  = await pdfTask.promise;
+        if (cancelled) return;
+
+        const page = await pdf.getPage(1); // 1-indexed
+        const vp0  = page.getViewport({ scale: 1 });
+        const containerW = bg.parentElement?.clientWidth || 560;
+        const scale  = containerW / vp0.width;
+        const vp     = page.getViewport({ scale });
+
+        bg.width   = vp.width;
+        bg.height  = vp.height;
+        draw.width  = vp.width;
+        draw.height = vp.height;
+
+        await page.render({ canvasContext: bg.getContext("2d"), viewport: vp }).promise;
+      } catch (err) {
+        console.warn("Diagram render failed:", err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [step]);
+
+  // ── Capture annotated diagram as PNG data URL ─────────────────────────────
+  function captureAnnotatedDiagram() {
+    const bg   = bgCanvasRef.current;
+    const draw = drawCanvasRef.current;
+    if (!bg || !draw) return null;
+    const out = document.createElement("canvas");
+    out.width  = bg.width;
+    out.height = bg.height;
+    const ctx = out.getContext("2d");
+    ctx.drawImage(bg,   0, 0);
+    ctx.drawImage(draw, 0, 0);
+    return out.toDataURL("image/png");
+  }
+
+  function clearDiagram() {
+    const draw = drawCanvasRef.current;
+    if (!draw) return;
+    draw.getContext("2d").clearRect(0, 0, draw.width, draw.height);
+  }
+
+  // ── Step navigation ────────────────────────────────────────────────────────
   function goToStep2() {
     const unanswered = ALL_VISUAL_ITEMS.filter(i => !visualResults[i.id]).map(i => i.id);
     if (unanswered.length > 0) { setVisHighlighted(unanswered); window.scrollTo(0,0); return; }
@@ -230,7 +353,6 @@ export default function CheckPage({ forkliftId }) {
     window.scrollTo(0,0);
   }
 
-  // ── Step 2 → 3 validation ──────────────────────────────────────────────────
   function goToStep3() {
     const unanswered = FUNCTION_CHECKS.filter(i => !funcResults[i.id]).map(i => i.id);
     if (unanswered.length > 0) { setFuncHighlighted(unanswered); window.scrollTo(0,0); return; }
@@ -239,9 +361,14 @@ export default function CheckPage({ forkliftId }) {
     window.scrollTo(0,0);
   }
 
+  function goToStep4() {
+    setStep(4);
+    window.scrollTo(0,0);
+  }
+
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    setStep3Error("");
+    setSubmitError("");
 
     // Capture sig BEFORE re-render destroys the canvas
     let capturedSig = sigDataUrl;
@@ -249,17 +376,26 @@ export default function CheckPage({ forkliftId }) {
       capturedSig = sigPadRef.current.toDataURL("image/png");
     }
 
+    // Capture annotated diagram before re-render
+    const diagramDataUrl = captureAnnotatedDiagram();
+
     // Validate
-    if (!photoFile) { setStep3Error("Please take a photo of the machine."); photoInputRef.current?.scrollIntoView({ behavior: "smooth" }); return; }
+    if (!photoFile) {
+      setSubmitError("Please take a photo of the machine.");
+      photoInputRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
     if (!capturedSig || (sigPadRef.current && sigPadRef.current.isEmpty())) {
-      setStep3Error("Please provide your signature."); canvasRef.current?.scrollIntoView({ behavior: "smooth" }); return;
+      setSubmitError("Please provide your signature.");
+      canvasRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
     }
 
     setSigDataUrl(capturedSig);
     setPageStatus("submitting");
 
-    const today   = todayStr();
-    const siteId  = forklift.sites?.id || forklift.site_id;
+    const today  = todayStr();
+    const siteId = forklift.sites?.id || forklift.site_id;
     const faultIds = [...Object.entries(visualResults), ...Object.entries(funcResults)]
       .filter(([, v]) => v === "fail")
       .map(([k]) => Number(k));
@@ -279,12 +415,29 @@ export default function CheckPage({ forkliftId }) {
       const sigBinary = atob(sigBase64);
       const sigBytes  = new Uint8Array(sigBinary.length);
       for (let i = 0; i < sigBinary.length; i++) sigBytes[i] = sigBinary.charCodeAt(i);
-      const sigBlob   = new Blob([sigBytes], { type: "image/png" });
-      const sigPath   = `${siteId}/${forkliftId}/${today}.png`;
+      const sigBlob = new Blob([sigBytes], { type: "image/png" });
+      const sigPath = `${siteId}/${forkliftId}/${today}.png`;
       const { error: sigErr } = await supabase.storage.from("signatures")
         .upload(sigPath, sigBlob, { upsert: true, contentType: "image/png" });
       if (sigErr) throw new Error("Signature upload failed: " + sigErr.message);
       const { data: { publicUrl: signatureUrl } } = supabase.storage.from("signatures").getPublicUrl(sigPath);
+
+      // Upload annotated diagram
+      let diagramAnnotationUrl = null;
+      if (diagramDataUrl) {
+        const diagBase64 = diagramDataUrl.split(",")[1];
+        const diagBinary = atob(diagBase64);
+        const diagBytes  = new Uint8Array(diagBinary.length);
+        for (let i = 0; i < diagBinary.length; i++) diagBytes[i] = diagBinary.charCodeAt(i);
+        const diagBlob = new Blob([diagBytes], { type: "image/png" });
+        const diagPath = `${siteId}/${forkliftId}/${today}-diagram.png`;
+        const { error: diagErr } = await supabase.storage.from("forklift-photos")
+          .upload(diagPath, diagBlob, { upsert: true, contentType: "image/png" });
+        if (!diagErr) {
+          const { data: { publicUrl } } = supabase.storage.from("forklift-photos").getPublicUrl(diagPath);
+          diagramAnnotationUrl = publicUrl;
+        }
+      }
 
       // Get/create weekly sheet
       const { data: sheetId, error: sheetErr } = await supabase.rpc("get_or_create_weekly_sheet", {
@@ -299,23 +452,25 @@ export default function CheckPage({ forkliftId }) {
       const { data: entry, error: entryErr } = await supabase
         .from("daily_inspection_entries")
         .insert({
-          sheet_id:       sheetId,
-          forklift_id:    forkliftId,
-          site_id:        siteId,
+          sheet_id:        sheetId,
+          forklift_id:     forkliftId,
+          site_id:         siteId,
           inspection_date: today,
-          day_of_week:    getDayOfWeek(today),
-          operator_name:  operatorName.trim(),
+          day_of_week:     getDayOfWeek(today),
+          operator_name:   operatorName.trim(),
           pal_card_number: palCard.trim() || null,
-          forklift_owner: forkOwner.trim() || null,
-          initialled:     true,
-          daily_status:   dailyStatus,
-          submitted_at:   new Date().toISOString(),
-          photo_url:      photoUrl,
-          signature_url:  signatureUrl,
-          tyre_fl_psi:    tyrePsi.fl ? Number(tyrePsi.fl) : null,
-          tyre_fr_psi:    tyrePsi.fr ? Number(tyrePsi.fr) : null,
-          tyre_rl_psi:    tyrePsi.rl ? Number(tyrePsi.rl) : null,
-          tyre_rr_psi:    tyrePsi.rr ? Number(tyrePsi.rr) : null,
+          forklift_owner:  forkOwner.trim() || null,
+          initialled:      true,
+          daily_status:    dailyStatus,
+          submitted_at:    new Date().toISOString(),
+          photo_url:       photoUrl,
+          signature_url:   signatureUrl,
+          tyre_fl_psi:     tyrePsi.fl ? Number(tyrePsi.fl) : null,
+          tyre_fr_psi:     tyrePsi.fr ? Number(tyrePsi.fr) : null,
+          tyre_rl_psi:     tyrePsi.rl ? Number(tyrePsi.rl) : null,
+          tyre_rr_psi:     tyrePsi.rr ? Number(tyrePsi.rr) : null,
+          additional_comments:    additionalComments.trim() || null,
+          diagram_annotation_url: diagramAnnotationUrl,
         })
         .select()
         .single();
@@ -323,25 +478,25 @@ export default function CheckPage({ forkliftId }) {
 
       // Insert visual check results
       const visRows = ALL_VISUAL_ITEMS.map(item => ({
-        entry_id:       entry.id,
-        sheet_id:       sheetId,
-        forklift_id:    forkliftId,
+        entry_id:        entry.id,
+        sheet_id:        sheetId,
+        forklift_id:     forkliftId,
         inspection_date: today,
-        item_number:    item.id,
-        category:       SECTIONS.find(s => s.items.some(i => i.id === item.id))?.id,
-        result:         visualResults[item.id],
+        item_number:     item.id,
+        category:        SECTIONS.find(s => s.items.some(i => i.id === item.id))?.id,
+        result:          visualResults[item.id],
       }));
       const { error: visErr } = await supabase.from("visual_check_results").insert(visRows);
       if (visErr) throw new Error("Visual results error: " + visErr.message);
 
       // Insert function check results
       const funcRows = FUNCTION_CHECKS.map(item => ({
-        entry_id:       entry.id,
-        sheet_id:       sheetId,
-        forklift_id:    forkliftId,
+        entry_id:        entry.id,
+        sheet_id:        sheetId,
+        forklift_id:     forkliftId,
         inspection_date: today,
-        item_number:    item.id,
-        result:         funcResults[item.id],
+        item_number:     item.id,
+        result:          funcResults[item.id],
       }));
       const { error: funcErr } = await supabase.from("function_check_results").insert(funcRows);
       if (funcErr) throw new Error("Function results error: " + funcErr.message);
@@ -350,16 +505,16 @@ export default function CheckPage({ forkliftId }) {
       if (faultIds.length > 0) {
         const allItems = [...ALL_VISUAL_ITEMS, ...FUNCTION_CHECKS];
         const defectRows = faultIds.map(id => ({
-          entry_id:       entry.id,
-          sheet_id:       sheetId,
-          forklift_id:    forkliftId,
-          site_id:        siteId,
+          entry_id:        entry.id,
+          sheet_id:        sheetId,
+          forklift_id:     forkliftId,
+          site_id:         siteId,
           inspection_date: today,
-          item_number:    id,
-          check_type:     id <= 20 ? "visual" : "function",
-          defect_details: faultDetails[id] || "",
-          date_noted:     today,
-          status:         "open",
+          item_number:     id,
+          check_type:      id <= 20 ? "visual" : "function",
+          defect_details:  faultDetails[id] || "",
+          date_noted:      today,
+          status:          "open",
         }));
         await supabase.from("defect_log").insert(defectRows);
       }
@@ -377,16 +532,15 @@ export default function CheckPage({ forkliftId }) {
     } catch (err) {
       console.error(err);
       setPageStatus("submit_error");
-      setStep3Error(err.message);
+      setSubmitError(err.message);
     }
   }
 
-  // ── Render helpers ────────────────────────────────────────────────────────
-  const totalItems   = ALL_VISUAL_ITEMS.length + FUNCTION_CHECKS.length;
+  // ── Render helpers ─────────────────────────────────────────────────────────
   const answeredVis  = ALL_VISUAL_ITEMS.filter(i => visualResults[i.id]).length;
   const answeredFunc = FUNCTION_CHECKS.filter(i => funcResults[i.id]).length;
   const progressPct  = step === 1
-    ? Math.round((answeredVis / ALL_VISUAL_ITEMS.length) * 100)
+    ? Math.round((answeredVis  / ALL_VISUAL_ITEMS.length) * 100)
     : step === 2
     ? Math.round((answeredFunc / FUNCTION_CHECKS.length) * 100)
     : 0;
@@ -399,7 +553,7 @@ export default function CheckPage({ forkliftId }) {
     <FullPageMsg msg="Machine not found" sub="This QR code is not registered or the machine is inactive." icon="🚫" />
   );
 
-  // ── ALREADY DONE ─────────────────────────────────────────────────────────
+  // ── ALREADY DONE ──────────────────────────────────────────────────────────
   if (pageStatus === "already_done") {
     const e = existingEntry;
     const faults = e?.defect_log || [];
@@ -464,9 +618,9 @@ export default function CheckPage({ forkliftId }) {
       <Page title="Submission Error" forklift={forklift}>
         <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "1rem", marginBottom: "1rem" }}>
           <p style={{ fontWeight: 800, color: "#b91c1c" }}>❌ Something went wrong</p>
-          <p style={{ fontSize: "0.85rem", color: "#374151" }}>{step3Error}</p>
+          <p style={{ fontSize: "0.85rem", color: "#374151" }}>{submitError}</p>
         </div>
-        <button onClick={() => { setPageStatus("form"); setStep(3); }} style={btnStyle(BRAND)}>
+        <button onClick={() => { setPageStatus("form"); setStep(4); }} style={btnStyle(BRAND)}>
           Try Again
         </button>
       </Page>
@@ -487,7 +641,7 @@ export default function CheckPage({ forkliftId }) {
           <div style={{ color: "#fff", fontWeight: 800, fontSize: "0.9rem", lineHeight: 1.2 }}>{forklift?.machine_ref}</div>
           <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.75rem" }}>{forklift?.sites?.name}</div>
         </div>
-        <div style={{ color: "rgba(255,255,255,0.9)", fontSize: "0.75rem" }}>Step {step + 1}/4</div>
+        <div style={{ color: "rgba(255,255,255,0.9)", fontSize: "0.75rem" }}>Step {step + 1}/5</div>
       </div>
 
       {/* Progress bar */}
@@ -598,7 +752,7 @@ export default function CheckPage({ forkliftId }) {
               ))}
             </div>
             <button style={btnStyle(BRAND)} onClick={goToStep3}>
-              Next: Review & Sign →
+              Next: Review →
             </button>
             <button style={btnStyle("#6b7280")} onClick={() => { setStep(1); window.scrollTo(0,0); }}>
               ← Back
@@ -606,23 +760,23 @@ export default function CheckPage({ forkliftId }) {
           </>
         )}
 
-        {/* ── STEP 3: Review, photo, signature ─────────────────────────────── */}
+        {/* ── STEP 3: Review ───────────────────────────────────────────────── */}
         {step === 3 && (
           <>
-            <h2 style={sectionTitle}>Review & Sign</h2>
+            <h2 style={sectionTitle}>Review</h2>
 
             {/* Summary table */}
             <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: "1rem" }}>
               <div style={{ background: "#1e2a47", color: "#fff", padding: "0.5rem 0.75rem", fontSize: "0.8rem", fontWeight: 800 }}>INSPECTION SUMMARY</div>
               {[
-                ["Machine", forklift?.machine_ref],
-                ["Site", forklift?.sites?.name],
-                ["Operator", operatorName],
+                ["Machine",          forklift?.machine_ref],
+                ["Site",             forklift?.sites?.name],
+                ["Operator",         operatorName],
                 palCard && ["Operator Card", palCard],
-                ["Date", fmtDateGB(todayStr())],
-                ["Visual checks", `${ALL_VISUAL_ITEMS.length} items`],
-                ["Function checks", `${FUNCTION_CHECKS.length} items`],
-                ["Faults", faultIds.length ? `${faultIds.length} fault${faultIds.length > 1 ? "s" : ""}` : "None"],
+                ["Date",             fmtDateGB(todayStr())],
+                ["Visual checks",    `${ALL_VISUAL_ITEMS.length} items`],
+                ["Function checks",  `${FUNCTION_CHECKS.length} items`],
+                ["Faults",           faultIds.length ? `${faultIds.length} fault${faultIds.length > 1 ? "s" : ""}` : "None"],
               ].filter(Boolean).map(([k, v]) => (
                 <div key={k} style={{ display: "flex", padding: "0.5rem 0.75rem", borderBottom: "1px solid #f3f4f6", fontSize: "0.85rem" }}>
                   <span style={{ color: "#6b7280", flex: "0 0 130px" }}>{k}</span>
@@ -658,6 +812,46 @@ export default function CheckPage({ forkliftId }) {
               </div>
             )}
 
+            <button style={btnStyle(BRAND)} onClick={goToStep4}>
+              Next: Comments &amp; Sign →
+            </button>
+            <button style={btnStyle("#6b7280")} onClick={() => { setStep(2); window.scrollTo(0,0); }}>
+              ← Back
+            </button>
+          </>
+        )}
+
+        {/* ── STEP 4: Additional Comments & Diagram ───────────────────────── */}
+        {step === 4 && (
+          <>
+            <h2 style={sectionTitle}>Additional Comments &amp; Diagram</h2>
+
+            {/* Additional comments */}
+            <div style={{ ...card, marginBottom: "1rem" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: "0.5rem", color: "#111827" }}>💬 Additional Comments</div>
+              <p style={{ margin: "0 0 0.6rem", fontSize: "0.82rem", color: "#6b7280" }}>Note any observations not captured in the checklist above (optional).</p>
+              <textarea
+                value={additionalComments}
+                onChange={e => setAdditionalComments(e.target.value)}
+                placeholder="e.g. Minor scuff on rear left panel — noted for records. No impact on operation."
+                rows={4}
+                style={{ width: "100%", boxSizing: "border-box", padding: "0.65rem", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: "0.9rem", resize: "vertical" }}
+              />
+            </div>
+
+            {/* Diagram annotation */}
+            <div style={{ ...card, marginBottom: "1rem" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: "0.3rem", color: "#111827" }}>🔴 Mark Areas of Concern</div>
+              <p style={{ margin: "0 0 0.65rem", fontSize: "0.82rem", color: "#6b7280" }}>
+                Use your finger to circle or annotate areas of concern on the machine diagram. The annotated image will be saved with your inspection.
+              </p>
+              <DiagramCanvas
+                bgCanvasRef={bgCanvasRef}
+                drawCanvasRef={drawCanvasRef}
+                onClear={clearDiagram}
+              />
+            </div>
+
             {/* Photo */}
             <div style={{ ...card, marginBottom: "1rem" }} ref={photoInputRef}>
               <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: "0.5rem", color: "#111827" }}>📸 Machine Photo *</div>
@@ -681,20 +875,21 @@ export default function CheckPage({ forkliftId }) {
               </button>
             </div>
 
-            {step3Error && (
+            {submitError && (
               <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "0.75rem", marginBottom: "1rem", fontSize: "0.85rem", color: "#b91c1c", fontWeight: 700 }}>
-                {step3Error}
+                {submitError}
               </div>
             )}
 
             <button style={btnStyle(faultIds.length ? "#b91c1c" : "#15803d")} onClick={handleSubmit}>
               {faultIds.length ? `⚠️ Submit with ${faultIds.length} Fault${faultIds.length > 1 ? "s" : ""}` : "✅ Submit — All Clear"}
             </button>
-            <button style={btnStyle("#6b7280")} onClick={() => { setStep(2); window.scrollTo(0,0); }}>
+            <button style={btnStyle("#6b7280")} onClick={() => { setStep(3); window.scrollTo(0,0); }}>
               ← Back
             </button>
           </>
         )}
+
       </div>
     </div>
   );
