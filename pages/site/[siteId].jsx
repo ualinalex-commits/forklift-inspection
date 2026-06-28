@@ -292,6 +292,14 @@ function ForkliftCard({ forklift, todayEntry, currentPdfUrl, rtRefreshKey, isAdm
 
       {open && (
         <div style={{ padding:"0 1rem 1rem", borderTop:"1px solid #f3f4f6" }}>
+          {/* Inspect Now — always visible, no day-of-week restriction */}
+          <div style={{ marginTop:"0.75rem" }}>
+            <a href={`/check/${localFork.id}`}
+              style={{ display:"block", textAlign:"center", padding:"0.7rem", background:BRAND, color:"#fff", borderRadius:12, fontWeight:800, fontSize:"0.95rem", textDecoration:"none" }}>
+              Inspect Now
+            </a>
+          </div>
+
           {/* Today's entry */}
           {todayEntry && (
             <div style={{ marginTop:"0.75rem" }}>
