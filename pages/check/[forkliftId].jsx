@@ -133,7 +133,7 @@ function ToggleGroup({ value, onChange, highlighted }) {
 }
 
 // ─── Diagram annotation canvas ────────────────────────────────────────────────
-function DiagramCanvas({ bgCanvasRef, drawCanvasRef, onClear }) {
+function DiagramCanvas({ bgCanvasRef, drawCanvasRef, onClear, status }) {
   const isPointerDown = useRef(false);
   const lastPos       = useRef({ x: 0, y: 0 });
 
@@ -147,6 +147,7 @@ function DiagramCanvas({ bgCanvasRef, drawCanvasRef, onClear }) {
   }
 
   function onDown(e) {
+    if (status !== "ready") return;
     e.preventDefault();
     isPointerDown.current = true;
     lastPos.current = getPos(drawCanvasRef.current, e);
@@ -174,18 +175,33 @@ function DiagramCanvas({ bgCanvasRef, drawCanvasRef, onClear }) {
 
   return (
     <div>
-      <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 10, overflow: "hidden", background: "#f9fafb", touchAction: "none" }}>
+      <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 10, overflow: "hidden", background: "#f9fafb", touchAction: "none", minHeight: 120 }}>
+        {/* Background canvas — PDF diagram rendered here */}
         <canvas ref={bgCanvasRef} style={{ display: "block", width: "100%", userSelect: "none" }} />
+        {/* Drawing overlay — transparent, captures touches */}
         <canvas ref={drawCanvasRef}
-          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", cursor: "crosshair", touchAction: "none" }}
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", cursor: status === "ready" ? "crosshair" : "default", touchAction: "none" }}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
           onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
         />
+        {/* Overlay messages while diagram loads */}
+        {status === "loading" && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(249,250,251,0.85)", fontSize: "0.85rem", color: "#6b7280" }}>
+            Loading diagram…
+          </div>
+        )}
+        {status === "error" && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(254,242,242,0.9)", fontSize: "0.82rem", color: "#b91c1c", textAlign: "center", padding: "1rem" }}>
+            ⚠️ Diagram could not be loaded.<br />You can still submit — annotations are optional.
+          </div>
+        )}
       </div>
-      <button onClick={onClear}
-        style={{ marginTop: "0.4rem", padding: "0.35rem 0.9rem", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: "0.82rem", cursor: "pointer" }}>
-        Clear Drawing
-      </button>
+      {status === "ready" && (
+        <button onClick={onClear}
+          style={{ marginTop: "0.4rem", padding: "0.35rem 0.9rem", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: "0.82rem", cursor: "pointer" }}>
+          Clear Drawing
+        </button>
+      )}
     </div>
   );
 }
@@ -223,6 +239,7 @@ export default function CheckPage({ forkliftId }) {
   const [photoFile, setPhotoFile]   = useState(null);
   const [sigDataUrl, setSigDataUrl] = useState(null);
   const [submitError, setSubmitError] = useState("");
+  const [diagramStatus, setDiagramStatus] = useState("idle"); // idle | loading | ready | error
 
   const photoInputRef  = useRef(null);
   const canvasRef      = useRef(null); // signature canvas
@@ -289,39 +306,59 @@ export default function CheckPage({ forkliftId }) {
   useEffect(() => {
     if (step !== 4) return;
     let cancelled = false;
+    let raf;
 
-    (async () => {
-      const bg   = bgCanvasRef.current;
-      const draw = drawCanvasRef.current;
-      if (!bg || !draw) return;
+    setDiagramStatus("loading");
 
-      try {
-        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
-        if (cancelled) return;
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    raf = requestAnimationFrame(() => {
+      (async () => {
+        const bg   = bgCanvasRef.current;
+        const draw = drawCanvasRef.current;
+        if (!bg || !draw) { setDiagramStatus("error"); return; }
 
-        const pdfTask = pdfjsLib.getDocument("/diagram.pdf");
-        const pdf  = await pdfTask.promise;
-        if (cancelled) return;
+        try {
+          // Dynamic import only runs client-side (inside useEffect + rAF)
+          const pdfjsModule = await import("pdfjs-dist");
+          if (cancelled) return;
 
-        const page = await pdf.getPage(1); // 1-indexed
-        const vp0  = page.getViewport({ scale: 1 });
-        const containerW = bg.parentElement?.clientWidth || 560;
-        const scale  = containerW / vp0.width;
-        const vp     = page.getViewport({ scale });
+          // Handle ESM namespace vs CJS default interop
+          const pdfjsLib = pdfjsModule.default ?? pdfjsModule;
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            new URL("/pdf.worker.min.mjs", window.location.href).href;
 
-        bg.width   = vp.width;
-        bg.height  = vp.height;
-        draw.width  = vp.width;
-        draw.height = vp.height;
+          // Fetch as bytes — more reliable than passing a URL string
+          const resp = await fetch("/diagram.pdf");
+          if (!resp.ok) throw new Error(`diagram.pdf fetch failed: ${resp.status}`);
+          const data = new Uint8Array(await resp.arrayBuffer());
+          if (cancelled) return;
 
-        await page.render({ canvasContext: bg.getContext("2d"), viewport: vp }).promise;
-      } catch (err) {
-        console.warn("Diagram render failed:", err);
-      }
-    })();
+          const pdf  = await pdfjsLib.getDocument({ data }).promise;
+          if (cancelled) return;
 
-    return () => { cancelled = true; };
+          const page = await pdf.getPage(1); // diagram.pdf is a single-page extract
+          const vp0  = page.getViewport({ scale: 1 });
+          const containerW = bg.parentElement?.clientWidth || 560;
+          const scale = containerW / vp0.width;
+          const vp    = page.getViewport({ scale });
+
+          bg.width    = vp.width;
+          bg.height   = vp.height;
+          draw.width  = vp.width;
+          draw.height = vp.height;
+
+          await page.render({ canvasContext: bg.getContext("2d"), viewport: vp }).promise;
+          if (!cancelled) setDiagramStatus("ready");
+        } catch (err) {
+          console.error("Diagram render failed:", err);
+          if (!cancelled) setDiagramStatus("error");
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
   }, [step]);
 
   // ── Capture annotated diagram as PNG data URL ─────────────────────────────
@@ -849,6 +886,7 @@ export default function CheckPage({ forkliftId }) {
                 bgCanvasRef={bgCanvasRef}
                 drawCanvasRef={drawCanvasRef}
                 onClear={clearDiagram}
+                status={diagramStatus}
               />
             </div>
 
