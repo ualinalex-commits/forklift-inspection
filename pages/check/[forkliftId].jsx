@@ -341,12 +341,33 @@ export default function CheckPage({ forkliftId }) {
           const scale = containerW / vp0.width;
           const vp    = page.getViewport({ scale });
 
-          bg.width    = vp.width;
-          bg.height   = vp.height;
-          draw.width  = vp.width;
-          draw.height = vp.height;
+          // Render full page to an offscreen canvas, then crop to just the
+          // diagram section (forklift side/rear drawings).
+          // Coordinates are PDF bottom-left pts (same as pdf-lib / generateReport.js):
+          //   "Use diagram below..." text bottom ≈ y=535.6 → crop starts just below
+          //   "Operator Name" row ≈ y=362.9 → crop ends just above
+          const PDF_CROP_TOP    = 530; // pts from bottom — just below "Use diagram" label
+          const PDF_CROP_BOTTOM = 358; // pts from bottom — just above "Operator Name" row
+          const cropY = Math.round((vp0.height - PDF_CROP_TOP) * scale);
+          const cropH = Math.round((PDF_CROP_TOP - PDF_CROP_BOTTOM) * scale);
 
-          await page.render({ canvasContext: bg.getContext("2d"), viewport: vp }).promise;
+          const offscreen = document.createElement("canvas");
+          offscreen.width  = Math.round(vp.width);
+          offscreen.height = Math.round(vp.height);
+          await page.render({ canvasContext: offscreen.getContext("2d"), viewport: vp }).promise;
+          if (cancelled) return;
+
+          bg.width    = offscreen.width;
+          bg.height   = cropH;
+          draw.width  = offscreen.width;
+          draw.height = cropH;
+
+          bg.getContext("2d").drawImage(
+            offscreen,
+            0, cropY, offscreen.width, cropH,
+            0, 0,     bg.width,        bg.height
+          );
+
           if (!cancelled) setDiagramStatus("ready");
         } catch (err) {
           console.error("Diagram render failed:", err);
