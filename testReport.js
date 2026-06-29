@@ -43,7 +43,7 @@ for (let i = 1; i <= 20; i++) {
     thu_result: "fail", fri_result: "pass", sat_result: "na",
   };
 }
-for (let i = 21; i <= 30; i++) {
+for (let i = 21; i <= 31; i++) {
   summaryByItem[i] = {
     item_number: i,
     mon_result: i % 2 === 0 ? "pass" : "fail",
