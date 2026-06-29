@@ -5,6 +5,42 @@
 
 const fs   = require("fs");
 const path = require("path");
+const zlib = require("zlib");
+
+// Generate a minimal valid PNG (solid colour) — used as a test signature placeholder.
+function makeTestPng(width, height) {
+  const table = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c;
+    }
+    return t;
+  })();
+  const crc32 = (buf) => { let c = 0xFFFFFFFF; for (const b of buf) c = table[(c ^ b) & 0xFF] ^ (c >>> 8); return (~c) >>> 0; };
+  const chunk = (type, data) => {
+    const t = Buffer.from(type, "ascii");
+    const d = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const len = Buffer.alloc(4); len.writeUInt32BE(d.length);
+    const crcBuf = Buffer.alloc(4); crcBuf.writeUInt32BE(crc32(Buffer.concat([t, d])));
+    return Buffer.concat([len, t, d, crcBuf]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 2; // 8-bit RGB
+  const raw = [];
+  for (let y = 0; y < height; y++) {
+    raw.push(0); // filter type None
+    for (let x = 0; x < width; x++) raw.push(30, 60, 140); // dark blue pixel
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(Buffer.from(raw))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 // Stub supabase-admin before loading generateReport so the import doesn't fail
 const supabaseAdminPath = path.resolve(__dirname, "lib/supabase-admin.js");
@@ -84,14 +120,14 @@ const defectsByDay = {
 };
 
 // ─── Page 3 data (most recent entry — tests comments, diagram fallback, sign-off) ─
-// sig_bytes: use Picture 1.png as a stand-in PNG to exercise the signature embed path.
+// sig_bytes: small solid-colour PNG (100×25px) — confirms embedding without polluting
+//   the Sign field with the diagram image.
 // diagram_bytes: null → stampPage3 loads public/Picture 1.png automatically.
-const testPngBytes = new Uint8Array(fs.readFileSync(path.join(__dirname, "public", "Picture 1.png")));
 const page3Data = {
   additional_comments: "Minor surface rust on rear right panel corner — flagged to supervisor. No impact on structural integrity or operation. Treatment scheduled for next service.",
   diagram_bytes:   null,
   operator_name:   "Alice Smith",
-  sig_bytes:       testPngBytes,
+  sig_bytes:       new Uint8Array(makeTestPng(100, 25)),
   inspection_date: "2026-06-23",
 };
 
