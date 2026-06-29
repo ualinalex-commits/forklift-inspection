@@ -20,9 +20,10 @@ const { buildPDF } = require("./lib/generateReport");
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
 const forklift = {
-  machine_ref:   "TH-01",
-  serial_number: "SN-123456",
-  site_id:       "test-site",
+  machine_ref:          "TH-01",
+  serial_number:        "SN-123456",
+  site_id:              "test-site",
+  thorough_exam_expiry: "2026-12-31",
   sites: { name: "Acme Construction Site" },
 };
 
@@ -82,15 +83,26 @@ const defectsByDay = {
   ],
 };
 
+// ─── Page 3 data (most recent entry — tests comments, diagram fallback, sign-off) ─
+const page3Data = {
+  additional_comments: "Minor surface rust on rear right panel corner — flagged to supervisor. No impact on structural integrity or operation. Treatment scheduled for next service.",
+  diagram_bytes:   null, // null → stampPage3 loads public/Picture 1.png automatically
+  operator_name:   "Alice Smith",
+  sig_bytes:       null,
+  inspection_date: "2026-06-23",
+};
+
 // ─── Run ──────────────────────────────────────────────────────────────────────
 (async () => {
   console.log("Building PDF from actual template…");
   try {
-    const buf = await buildPDF({ forklift, sheet, summaryByItem, operatorsByDay, defectsByDay, mediaByDay });
+    const buf = await buildPDF({ forklift, sheet, summaryByItem, operatorsByDay, defectsByDay, mediaByDay, page3Data });
     const out = path.join(__dirname, "test-output.pdf");
     fs.writeFileSync(out, buf);
     console.log(`✓ Written to ${out}  (${(buf.length / 1024).toFixed(1)} KB)`);
-    console.log("Open test-output.pdf and verify stamps are in the correct cells.");
+    console.log("Open test-output.pdf and verify:");
+    console.log("  Page 1: machine name above serial, serial number, thorough exam expiry date, site name, week commencing");
+    console.log("  Page 3: additional comments, Picture 1.png diagram, operator name, date");
   } catch (err) {
     console.error("✗ Failed:", err.message);
     process.exit(1);
