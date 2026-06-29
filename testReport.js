@@ -84,11 +84,14 @@ const defectsByDay = {
 };
 
 // ─── Page 3 data (most recent entry — tests comments, diagram fallback, sign-off) ─
+// sig_bytes: use Picture 1.png as a stand-in PNG to exercise the signature embed path.
+// diagram_bytes: null → stampPage3 loads public/Picture 1.png automatically.
+const testPngBytes = new Uint8Array(fs.readFileSync(path.join(__dirname, "public", "Picture 1.png")));
 const page3Data = {
   additional_comments: "Minor surface rust on rear right panel corner — flagged to supervisor. No impact on structural integrity or operation. Treatment scheduled for next service.",
-  diagram_bytes:   null, // null → stampPage3 loads public/Picture 1.png automatically
+  diagram_bytes:   null,
   operator_name:   "Alice Smith",
-  sig_bytes:       null,
+  sig_bytes:       testPngBytes,
   inspection_date: "2026-06-23",
 };
 
