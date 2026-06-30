@@ -50,6 +50,7 @@ const FUNCTION_CHECKS = [
   { id: 28, text: "Tilt — forward and back, smooth operation" },
   { id: 29, text: "Horn — audible and functioning" },
   { id: 30, text: "Audible travel / reversing alarm working" },
+  { id: 31, text: "Slings, bin handlers, chains etc — Suitable storage, free from damage, good condition" },
 ];
 
 const ALL_VISUAL_ITEMS = SECTIONS.flatMap(s => s.items);
