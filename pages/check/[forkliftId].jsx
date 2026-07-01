@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
+import SupervisorSignoffModal from "../../components/SupervisorSignoffModal";
 
 const BRAND = "#d02a35";
 
@@ -256,6 +257,10 @@ export default function CheckPage({ forkliftId }) {
 
   const [doneEntry, setDoneEntry] = useState(null);
 
+  // Supervisor sign-off (already_done screen) — one per forklift per week
+  const [weekSheet, setWeekSheet] = useState(null);
+  const [signoffOpen, setSignoffOpen] = useState(false);
+
   // ── Load forklift + check today ────────────────────────────────────────────
   useEffect(() => {
     async function load() {
@@ -280,6 +285,14 @@ export default function CheckPage({ forkliftId }) {
       if (entry) {
         setExistingEntry(entry);
         setPageStatus("already_done");
+        if (entry.sheet_id) {
+          const { data: sheet } = await supabase
+            .from("weekly_inspection_sheets")
+            .select("id, supervisor_name, supervisor_signature_url, supervisor_sign_date")
+            .eq("id", entry.sheet_id)
+            .maybeSingle();
+          setWeekSheet(sheet || null);
+        }
       } else {
         setPageStatus("form");
       }
@@ -543,7 +556,7 @@ export default function CheckPage({ forkliftId }) {
         </div>
         <ThoroughExamCard forklift={forklift} />
         {faults.length > 0 && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "1rem" }}>
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "1rem", marginBottom: "1rem" }}>
             <p style={{ margin: "0 0 0.5rem", fontWeight: 800, color: "#b91c1c" }}>⚠️ {faults.length} fault{faults.length > 1 ? "s" : ""} reported</p>
             {faults.map((f, i) => (
               <div key={i} style={{ fontSize: "0.85rem", color: "#111827", marginBottom: "0.35rem" }}>
@@ -551,6 +564,39 @@ export default function CheckPage({ forkliftId }) {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Supervisor sign-off — one per forklift per week */}
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "1rem" }}>
+          <p style={{ margin: "0 0 0.5rem", fontWeight: 800, color: "#111827", fontSize: "0.9rem" }}>Supervisor Sign-off</p>
+          <button onClick={() => setSignoffOpen(true)}
+            style={{ padding: "0.6rem 1rem", fontSize: "0.85rem", fontWeight: 700, borderRadius: 10, cursor: "pointer",
+              border: weekSheet?.supervisor_name ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
+              background: weekSheet?.supervisor_name ? "#f0fdf4" : "#f9fafb",
+              color: weekSheet?.supervisor_name ? "#15803d" : "#374151" }}>
+            {weekSheet?.supervisor_name ? `✓ Signed — ${weekSheet.supervisor_name}` : "Supervisor Sign-off"}
+          </button>
+        </div>
+
+        {signoffOpen && (
+          <SupervisorSignoffModal
+            forklift={forklift}
+            siteId={forklift.sites?.id || forklift.site_id}
+            sheetId={weekSheet?.id || existingEntry?.sheet_id || null}
+            supervisorName={weekSheet?.supervisor_name || ""}
+            onClose={() => setSignoffOpen(false)}
+            onDone={async () => {
+              setSignoffOpen(false);
+              if (existingEntry?.sheet_id) {
+                const { data: sheet } = await supabase
+                  .from("weekly_inspection_sheets")
+                  .select("id, supervisor_name, supervisor_signature_url, supervisor_sign_date")
+                  .eq("id", existingEntry.sheet_id)
+                  .maybeSingle();
+                setWeekSheet(sheet || null);
+              }
+            }}
+          />
         )}
       </Page>
     );

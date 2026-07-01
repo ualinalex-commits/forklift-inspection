@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
+import SupervisorSignoffModal from "../../components/SupervisorSignoffModal";
 
 const BRAND = "#d02a35";
 
@@ -31,14 +32,14 @@ function getWeekDates() {
   });
 }
 
-function WeeklyTracker({ forkliftId, refreshKey, onSelectDay, hideSquares }) {
+function WeeklyTracker({ forkliftId, refreshKey }) {
   const [entryMap, setEntryMap] = useState({});
   const weekDates = getWeekDates();
   const today     = todayStr();
 
   useEffect(() => {
     supabase.from("daily_inspection_entries")
-      .select("id, inspection_date, sheet_id, supervisor_name")
+      .select("id, inspection_date")
       .eq("forklift_id", forkliftId)
       .in("inspection_date", weekDates)
       .then(({ data }) => {
@@ -50,130 +51,23 @@ function WeeklyTracker({ forkliftId, refreshKey, onSelectDay, hideSquares }) {
 
   const dayLabels = ["M","T","W","T","F","S"];
   return (
-    <div>
-      {!hideSquares && (
-        <div style={{ display:"flex", gap:4, marginTop:"0.5rem" }}>
-          {weekDates.map((date, i) => {
-            const entry   = entryMap[date];
-            const done    = !!entry;
-            const past    = date < today;
-            const isToday = date === today;
-            const bg = done ? "#15803d" : past ? "#b91c1c" : "#e5e7eb";
-            return (
-              <div key={date} title={date} style={{ width:28, height:28, borderRadius:6,
-                background:bg, display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:"0.7rem", fontWeight:800, color: done || past ? "#fff" : "#9ca3af",
-                border: isToday ? `2px solid ${BRAND}` : "2px solid transparent" }}>
-                {dayLabels[i]}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {onSelectDay && (
-        <div style={{ display:"flex", gap:4, marginTop:"0.35rem", flexWrap:"wrap" }}>
-          {weekDates.map((date, i) => {
-            const entry = entryMap[date];
-            if (!entry) return null;
-            const signed = !!entry.supervisor_name;
-            return (
-              <button key={date}
-                onClick={() => onSelectDay({ entryId: entry.id, sheetId: entry.sheet_id, date, supervisorName: entry.supervisor_name })}
-                style={{ padding:"0.2rem 0.5rem", fontSize:"0.68rem", fontWeight:700, borderRadius:6, cursor:"pointer",
-                  border: signed ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
-                  background: signed ? "#f0fdf4" : "#f9fafb",
-                  color: signed ? "#15803d" : "#374151" }}>
-                {signed ? `✓ ${dayLabels[i]} Signed` : `${dayLabels[i]} Sign-off`}
-              </button>
-            );
-          })}
-        </div>
-      )}
+    <div style={{ display:"flex", gap:4, marginTop:"0.5rem" }}>
+      {weekDates.map((date, i) => {
+        const entry   = entryMap[date];
+        const done    = !!entry;
+        const past    = date < today;
+        const isToday = date === today;
+        const bg = done ? "#15803d" : past ? "#b91c1c" : "#e5e7eb";
+        return (
+          <div key={date} title={date} style={{ width:28, height:28, borderRadius:6,
+            background:bg, display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:"0.7rem", fontWeight:800, color: done || past ? "#fff" : "#9ca3af",
+            border: isToday ? `2px solid ${BRAND}` : "2px solid transparent" }}>
+            {dayLabels[i]}
+          </div>
+        );
+      })}
     </div>
-  );
-}
-
-// ─── SupervisorSignoffModal ────────────────────────────────────────────────────
-function SupervisorSignoffModal({ forklift, siteId, day, onClose, onDone }) {
-  const [name, setName]       = useState(day.supervisorName || "");
-  const [signDate, setSignDate] = useState(todayStr());
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const canvasRef = useRef(null);
-  const sigPadRef = useRef(null);
-
-  useEffect(() => {
-    let raf = requestAnimationFrame(() => {
-      if (!canvasRef.current) return;
-      import("signature_pad").then(({ default: SignaturePad }) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        canvas.width  = canvas.offsetWidth  || 320;
-        canvas.height = canvas.offsetHeight || 160;
-        sigPadRef.current = new SignaturePad(canvas, { backgroundColor:"rgb(255,255,255)", penColor:"#111827" });
-      });
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      if (sigPadRef.current) { sigPadRef.current.off(); sigPadRef.current = null; }
-    };
-  }, []);
-
-  async function handleSave(e) {
-    e.preventDefault();
-    if (!name.trim()) { setError("Please enter the supervisor's name."); return; }
-    if (!sigPadRef.current || sigPadRef.current.isEmpty()) { setError("Please provide a signature."); return; }
-    setLoading(true); setError("");
-
-    try {
-      const sigDataUrl = sigPadRef.current.toDataURL("image/png");
-      const sigBase64  = sigDataUrl.split(",")[1];
-      const sigBinary  = atob(sigBase64);
-      const sigBytes   = new Uint8Array(sigBinary.length);
-      for (let i = 0; i < sigBinary.length; i++) sigBytes[i] = sigBinary.charCodeAt(i);
-      const sigBlob = new Blob([sigBytes], { type:"image/png" });
-      const sigPath = `${siteId}/${forklift.id}/${day.date}-supervisor.png`;
-      const { error: upErr } = await supabase.storage.from("signatures").upload(sigPath, sigBlob, { upsert:true, contentType:"image/png" });
-      if (upErr) throw new Error(upErr.message);
-      const { data:{ publicUrl } } = supabase.storage.from("signatures").getPublicUrl(sigPath);
-
-      const { error: dbErr } = await supabase.from("daily_inspection_entries").update({
-        supervisor_name: name.trim(),
-        supervisor_signature_url: publicUrl,
-        supervisor_sign_date: signDate,
-      }).eq("id", day.entryId);
-      if (dbErr) throw new Error(dbErr.message);
-
-      // Regenerate the PDF so the sign-off appears on page 3
-      fetch("/api/trigger-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forklift_id: forklift.id, sheet_id: day.sheetId }),
-      }).catch(() => {});
-
-      onDone();
-    } catch (err) {
-      setError(err.message);
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Modal title={`Supervisor Sign-off — ${fmtDateGB(day.date)}`} onClose={onClose}>
-      <form onSubmit={handleSave}>
-        <label style={labelStyle}>Supervisor Name *</label>
-        <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Full name" required />
-        <label style={labelStyle}>Date *</label>
-        <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} style={inputStyle} required />
-        <label style={labelStyle}>Signature *</label>
-        <div style={{ border:"2px solid #e5e7eb", borderRadius:10, overflow:"hidden", touchAction:"none", marginBottom:"0.5rem" }}>
-          <canvas ref={canvasRef} style={{ display:"block", width:"100%", height:140, touchAction:"none" }} />
-        </div>
-        <button type="button" onClick={() => sigPadRef.current?.clear()} style={{ ...smallBtn("#6b7280"), marginBottom:"1rem" }}>Clear</button>
-        {error && <p style={{ color:BRAND, fontSize:"0.85rem" }}>{error}</p>}
-        <button type="submit" disabled={loading} style={btnStyle(BRAND)}>{loading ? "Saving…" : "Save Sign-off"}</button>
-      </form>
-    </Modal>
   );
 }
 
@@ -375,10 +269,10 @@ function AddForkliftModal({ siteId, onClose, onAdded }) {
 }
 
 // ─── ForkliftCard ─────────────────────────────────────────────────────────────
-function ForkliftCard({ forklift, todayEntry, currentPdfUrl, rtRefreshKey, isAdmin, onArchiveToggle }) {
+function ForkliftCard({ forklift, todayEntry, currentPdfUrl, weekSheet, rtRefreshKey, isAdmin, onArchiveToggle }) {
   const [open, setOpen]         = useState(false);
   const [examModal, setExamModal] = useState(false);
-  const [signoffDay, setSignoffDay] = useState(null);
+  const [signoffOpen, setSignoffOpen] = useState(false);
   const [localFork, setLocalFork] = useState(forklift);
   const faults = todayEntry?.defect_log || [];
   const done   = !!todayEntry;
@@ -435,11 +329,18 @@ function ForkliftCard({ forklift, todayEntry, currentPdfUrl, rtRefreshKey, isAdm
           {/* Thorough exam */}
           <ThoroughExamCard forklift={localFork} isAdmin={isAdmin} onUpload={() => setExamModal(true)} />
 
-          {/* Supervisor sign-off — admin only, per completed day */}
+          {/* Supervisor sign-off — one per forklift per week (matches the single
+              Supervisor Name/Sign/Date row on page 3 of the PDF) */}
           {isAdmin && (
             <div style={{ marginTop:"0.75rem" }}>
               <p style={{ margin:"0 0 0.25rem", fontSize:"0.8rem", fontWeight:700, color:"#374151" }}>Supervisor Sign-off</p>
-              <WeeklyTracker forkliftId={localFork.id} refreshKey={rtRefreshKey} hideSquares onSelectDay={setSignoffDay} />
+              <button onClick={() => setSignoffOpen(true)}
+                style={{ padding:"0.4rem 0.9rem", fontSize:"0.78rem", fontWeight:700, borderRadius:8, cursor:"pointer",
+                  border: weekSheet?.supervisor_name ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
+                  background: weekSheet?.supervisor_name ? "#f0fdf4" : "#f9fafb",
+                  color: weekSheet?.supervisor_name ? "#15803d" : "#374151" }}>
+                {weekSheet?.supervisor_name ? `✓ Signed — ${weekSheet.supervisor_name}` : "Supervisor Sign-off"}
+              </button>
             </div>
           )}
 
@@ -477,13 +378,14 @@ function ForkliftCard({ forklift, todayEntry, currentPdfUrl, rtRefreshKey, isAdm
         />
       )}
 
-      {signoffDay && (
+      {signoffOpen && (
         <SupervisorSignoffModal
           forklift={localFork}
           siteId={localFork.site_id}
-          day={signoffDay}
-          onClose={() => setSignoffDay(null)}
-          onDone={() => setSignoffDay(null)}
+          sheetId={weekSheet?.id || null}
+          supervisorName={weekSheet?.supervisor_name || ""}
+          onClose={() => setSignoffOpen(false)}
+          onDone={() => setSignoffOpen(false)}
         />
       )}
     </div>
@@ -497,6 +399,7 @@ export default function SiteDashboard({ siteId }) {
   const [archived, setArchived]   = useState([]);
   const [todayEntries, setTodayEntries] = useState({});
   const [pdfUrls, setPdfUrls]     = useState({});
+  const [weekSheets, setWeekSheets] = useState({});
   const [loading, setLoading]     = useState(true);
   const [isAdmin, setIsAdmin]     = useState(false);
   const [isMainAdmin, setIsMainAdmin] = useState(false);
@@ -566,13 +469,17 @@ export default function SiteDashboard({ siteId }) {
   async function loadPdfData() {
     const weekComm = getWeekCommencing(new Date());
     const { data } = await supabase.from("weekly_inspection_sheets")
-      .select("forklift_id, pdf_url")
+      .select("id, forklift_id, pdf_url, supervisor_name, supervisor_signature_url, supervisor_sign_date")
       .eq("site_id", siteId)
-      .eq("week_commencing", weekComm)
-      .not("pdf_url","is",null);
-    const map = {};
-    (data||[]).forEach(s => { map[s.forklift_id] = s.pdf_url; });
-    setPdfUrls(map);
+      .eq("week_commencing", weekComm);
+    const pdfMap   = {};
+    const sheetMap = {};
+    (data||[]).forEach(s => {
+      if (s.pdf_url) pdfMap[s.forklift_id] = s.pdf_url;
+      sheetMap[s.forklift_id] = s;
+    });
+    setPdfUrls(pdfMap);
+    setWeekSheets(sheetMap);
   }
 
   function getWeekCommencing(date) {
@@ -697,6 +604,7 @@ export default function SiteDashboard({ siteId }) {
         )}
         {forklifts.map(f => (
           <ForkliftCard key={f.id} forklift={f} todayEntry={todayEntries[f.id]} currentPdfUrl={pdfUrls[f.id]}
+            weekSheet={weekSheets[f.id]}
             rtRefreshKey={rtRefreshKey} isAdmin={isAdmin}
             onArchiveToggle={handleArchiveToggle} />
         ))}
