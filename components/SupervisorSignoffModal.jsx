@@ -55,6 +55,7 @@ export default function SupervisorSignoffModal({ forklift, siteId, sheetId, supe
         if (sheetErr) throw new Error(sheetErr.message);
         resolvedSheetId = newSheetId;
       }
+      console.log("[supervisor] resolved sheet_id:", resolvedSheetId, "(prop sheetId was:", sheetId, ")");
 
       const sigDataUrl = sigPadRef.current.toDataURL("image/png");
       const sigBase64  = sigDataUrl.split(",")[1];
@@ -67,22 +68,40 @@ export default function SupervisorSignoffModal({ forklift, siteId, sheetId, supe
       if (upErr) throw new Error(upErr.message);
       const { data: { publicUrl } } = supabase.storage.from("signatures").getPublicUrl(sigPath);
 
-      const { error: dbErr } = await supabase.from("weekly_inspection_sheets").update({
+      const updatePayload = {
         supervisor_name: name.trim(),
         supervisor_signature_url: publicUrl,
         supervisor_sign_date: signDate,
-      }).eq("id", resolvedSheetId);
+      };
+      console.log("[supervisor] saving to weekly_inspection_sheets:", { sheet_id: resolvedSheetId, ...updatePayload });
+      const { data: dbData, error: dbErr } = await supabase
+        .from("weekly_inspection_sheets")
+        .update(updatePayload)
+        .eq("id", resolvedSheetId)
+        .select();
+      console.log("[supervisor] weekly_inspection_sheets update result:", { data: dbData, error: dbErr });
       if (dbErr) throw new Error(dbErr.message);
+      if (!dbData || dbData.length === 0) {
+        console.warn("[supervisor] update matched 0 rows — sheet_id may be wrong, or RLS is blocking the UPDATE for the anon role");
+      }
 
       // Regenerate the PDF so the sign-off appears on page 3
-      fetch("/api/trigger-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forklift_id: forklift.id, sheet_id: resolvedSheetId }),
-      }).catch(() => {});
+      console.log("[supervisor] triggering PDF for sheet_id:", resolvedSheetId, "forklift_id:", forklift.id);
+      try {
+        const pdfRes = await fetch("/api/trigger-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ forklift_id: forklift.id, sheet_id: resolvedSheetId }),
+        });
+        const pdfBody = await pdfRes.json().catch(() => null);
+        console.log("[supervisor] PDF trigger response:", pdfRes.status, pdfBody);
+      } catch (fetchErr) {
+        console.log("[supervisor] PDF trigger response: request failed", fetchErr);
+      }
 
       onDone();
     } catch (err) {
+      console.log("[supervisor] save failed:", err);
       setError(err.message);
       setLoading(false);
     }
