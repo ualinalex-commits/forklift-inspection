@@ -101,12 +101,12 @@ const operatorsByDay = {
 };
 
 const mediaByDay = {
-  Mon: { photo_url: null, signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 87, tyre_rr_psi: 86, photo_bytes: null, sig_bytes: null },
-  Tue: { photo_url: null, signature_url: null, tyre_fl_psi: 83, tyre_fr_psi: 84, tyre_rl_psi: 85, tyre_rr_psi: 85, photo_bytes: null, sig_bytes: null },
-  Wed: { photo_url: null, signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 86, tyre_rr_psi: 86, photo_bytes: null, sig_bytes: null },
-  Thu: { photo_url: null, signature_url: null, tyre_fl_psi: 80, tyre_fr_psi: 81, tyre_rl_psi: 82, tyre_rr_psi: 82, photo_bytes: null, sig_bytes: null },
-  Fri: { photo_url: null, signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 87, tyre_rr_psi: 86, photo_bytes: null, sig_bytes: null },
-  Sat: { photo_url: null, signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 86, tyre_rr_psi: 85, photo_bytes: null, sig_bytes: null },
+  Mon: { signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 87, tyre_rr_psi: 86, sig_bytes: null },
+  Tue: { signature_url: null, tyre_fl_psi: 83, tyre_fr_psi: 84, tyre_rl_psi: 85, tyre_rr_psi: 85, sig_bytes: null },
+  Wed: { signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 86, tyre_rr_psi: 86, sig_bytes: null },
+  Thu: { signature_url: null, tyre_fl_psi: 80, tyre_fr_psi: 81, tyre_rl_psi: 82, tyre_rr_psi: 82, sig_bytes: null },
+  Fri: { signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 87, tyre_rr_psi: 86, sig_bytes: null },
+  Sat: { signature_url: null, tyre_fl_psi: 85, tyre_fr_psi: 85, tyre_rl_psi: 86, tyre_rr_psi: 85, sig_bytes: null },
 };
 
 const defectsByDay = {
@@ -124,11 +124,14 @@ const defectsByDay = {
 //   the Sign field with the diagram image.
 // diagram_bytes: null → stampPage3 loads public/Picture 1.png automatically.
 const page3Data = {
-  additional_comments: "Minor surface rust on rear right panel corner — flagged to supervisor. No impact on structural integrity or operation. Treatment scheduled for next service.",
-  diagram_bytes:   null,
-  operator_name:   "Alice Smith",
-  sig_bytes:       new Uint8Array(makeTestPng(100, 25)),
-  inspection_date: "2026-06-23",
+  additional_comments:  "Minor surface rust on rear right panel corner — flagged to supervisor. No impact on structural integrity or operation. Treatment scheduled for next service.",
+  diagram_bytes:        null,
+  operator_name:        "Alice Smith",
+  sig_bytes:            new Uint8Array(makeTestPng(100, 25)),
+  inspection_date:      "2026-06-23",
+  supervisor_name:      "Janet Reid",
+  supervisor_sig_bytes: new Uint8Array(makeTestPng(100, 25)),
+  supervisor_sign_date: "2026-06-24",
 };
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
@@ -141,7 +144,7 @@ const page3Data = {
     console.log(`✓ Written to ${out}  (${(buf.length / 1024).toFixed(1)} KB)`);
     console.log("Open test-output.pdf and verify:");
     console.log("  Page 1: machine name above serial, serial number, thorough exam expiry date, site name, week commencing");
-    console.log("  Page 3: additional comments, Picture 1.png diagram, operator name, date");
+    console.log("  Page 3: additional comments, Picture 1.png diagram, operator name/sign/date, supervisor name/sign/date");
   } catch (err) {
     console.error("✗ Failed:", err.message);
     process.exit(1);

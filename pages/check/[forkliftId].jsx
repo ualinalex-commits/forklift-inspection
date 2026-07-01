@@ -243,14 +243,12 @@ export default function CheckPage({ forkliftId }) {
   // Step 3 — fault details only
   const [faultDetails, setFaultDetails] = useState({});
 
-  // Step 4 — comments, diagram, photo, signature
+  // Step 4 — comments, diagram, signature
   const [additionalComments, setAdditionalComments] = useState("");
-  const [photoFile, setPhotoFile]   = useState(null);
   const [sigDataUrl, setSigDataUrl] = useState(null);
   const [submitError, setSubmitError] = useState("");
   const [diagramStatus, setDiagramStatus] = useState("idle"); // idle | loading | ready | error
 
-  const photoInputRef  = useRef(null);
   const canvasRef      = useRef(null); // signature canvas
   const sigPadRef      = useRef(null); // SignaturePad instance
   const imgRef         = useRef(null); // diagram background image (Picture 1.png)
@@ -372,11 +370,6 @@ export default function CheckPage({ forkliftId }) {
     const diagramDataUrl = captureAnnotatedDiagram();
 
     // Validate
-    if (!photoFile) {
-      setSubmitError("Please take a photo of the machine.");
-      photoInputRef.current?.scrollIntoView({ behavior: "smooth" });
-      return;
-    }
     if (!capturedSig || (sigPadRef.current && sigPadRef.current.isEmpty())) {
       setSubmitError("Please provide your signature.");
       canvasRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -394,14 +387,6 @@ export default function CheckPage({ forkliftId }) {
     const dailyStatus = faultIds.length > 0 ? "fault" : "ok";
 
     try {
-      // Upload photo
-      const photoExt  = photoFile.name?.split(".").pop() || "jpg";
-      const photoPath = `${siteId}/${forkliftId}/${today}.${photoExt}`;
-      const { error: photoErr } = await supabase.storage.from("forklift-photos")
-        .upload(photoPath, photoFile, { upsert: true, contentType: photoFile.type });
-      if (photoErr) throw new Error("Photo upload failed: " + photoErr.message);
-      const { data: { publicUrl: photoUrl } } = supabase.storage.from("forklift-photos").getPublicUrl(photoPath);
-
       // Upload signature
       const sigBase64 = capturedSig.split(",")[1];
       const sigBinary = atob(sigBase64);
@@ -455,7 +440,6 @@ export default function CheckPage({ forkliftId }) {
           initialled:      true,
           daily_status:    dailyStatus,
           submitted_at:    new Date().toISOString(),
-          photo_url:       photoUrl,
           signature_url:   signatureUrl,
           tyre_fl_psi:     tyrePsi.fl ? Number(tyrePsi.fl) : null,
           tyre_fr_psi:     tyrePsi.fr ? Number(tyrePsi.fr) : null,
@@ -853,17 +837,6 @@ export default function CheckPage({ forkliftId }) {
                 }}
                 onImgError={() => setDiagramStatus("error")}
               />
-            </div>
-
-            {/* Photo */}
-            <div style={{ ...card, marginBottom: "1rem" }} ref={photoInputRef}>
-              <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: "0.5rem", color: "#111827" }}>📸 Machine Photo *</div>
-              <p style={{ fontSize: "0.82rem", color: "#6b7280", margin: "0 0 0.75rem" }}>Take a photo of the machine from the front or side.</p>
-              <input type="file" accept="image/*" capture="environment"
-                onChange={e => setPhotoFile(e.target.files?.[0] || null)}
-                style={{ fontSize: "0.9rem" }}
-              />
-              {photoFile && <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#15803d" }}>✓ Photo selected: {photoFile.name}</p>}
             </div>
 
             {/* Signature */}
