@@ -189,44 +189,50 @@ CREATE TABLE IF NOT EXISTS check_items (
   has_gp      boolean NOT NULL DEFAULT false  -- false for all items (no G/P split)
 );
 
+-- Wording matches the printed rows on the PL054-OP-V3 Telehandler Inspection
+-- Checklist template (see lib/generateReport.js VIS_ROWS / FUNC_ROWS) and the
+-- SECTIONS/FUNCTION_CHECKS in pages/check/[forkliftId].jsx. Item 30 does not
+-- exist on the current template revision; item 31 (Accessories) replaces it.
 INSERT INTO check_items (item_number, check_type, category, description, has_gp) VALUES
-  -- Visual checks 1–20
-  ( 1, 'visual', 'documentation',   'Statutory examination in date (LOLER)',                          false),
-  ( 2, 'visual', 'documentation',   'Operator manual present and accessible',                         false),
-  ( 3, 'visual', 'documentation',   'Pre-use inspection record up to date',                           false),
-  ( 4, 'visual', 'tyres_wheels',    'Tyre condition — no cuts, bulges or foreign objects',            false),
-  ( 5, 'visual', 'tyres_wheels',    'Wheel nuts / bolts secure, no damaged rims',                     false),
-  ( 6, 'visual', 'engine_power',    'Fuel level adequate for planned work',                           false),
-  ( 7, 'visual', 'engine_power',    'Engine oil and coolant levels correct',                          false),
-  ( 8, 'visual', 'engine_power',    'No fluid leaks visible on ground beneath machine',               false),
-  ( 9, 'visual', 'hydraulics',      'Hydraulic oil level correct',                                    false),
-  (10, 'visual', 'hydraulics',      'No hydraulic leaks — hoses, cylinders, connections',            false),
-  (11, 'visual', 'boom_attachment', 'Boom — no cracks, damage, wear or misalignment',                false),
-  (12, 'visual', 'boom_attachment', 'Boom hoses and chains — condition, routing correct',            false),
-  (13, 'visual', 'boom_attachment', 'Attachment secure, correct type, no visible damage',            false),
-  (14, 'visual', 'boom_attachment', 'Attachment locking pins / retention devices secure',            false),
-  (15, 'visual', 'boom_attachment', 'Headboard / forks / bucket — no cracks, bends or wear',        false),
-  (16, 'visual', 'bodywork_safety', 'Cab — seat, mirrors, windows, wipers undamaged',               false),
-  (17, 'visual', 'bodywork_safety', 'ROPS/FOPS structure — secure, no cracks or damage',            false),
-  (18, 'visual', 'bodywork_safety', 'Counterweight — secure and undamaged',                          false),
-  (19, 'visual', 'bodywork_safety', 'Seat belt / operator restraint — condition and function',       false),
-  (20, 'visual', 'bodywork_safety', 'Lights and beacon present and working (if applicable)',         false),
-  -- Function checks 21–30 (single tick — no G/P split)
-  (21, 'function', 'engine', 'Engine start — normal operation, no warning lights',                   false),
-  (22, 'function', 'drive',  'Drive — forward, reverse, steering response correct',                  false),
-  (23, 'function', 'brakes', 'Brakes — service and parking brake effective',                          false),
-  (24, 'function', 'boom',   'Boom lift — smooth, correct speed, holds position',                    false),
-  (25, 'function', 'boom',   'Boom lower — smooth, controlled descent',                              false),
-  (26, 'function', 'boom',   'Boom extend — smooth, full travel, no binding',                        false),
-  (27, 'function', 'boom',   'Boom retract — smooth, full travel',                                   false),
-  (28, 'function', 'boom',   'Tilt — forward and back, smooth operation',                            false),
-  (29, 'function', 'safety', 'Horn — audible and functioning',                                       false),
-  (30, 'function', 'safety', 'Audible travel / reversing alarm working',                             false)
+  -- Visual checks 1–20 ("On the Machine, Outside the Cab" / "Engine Compartment" / "Inside the Cab")
+  ( 1, 'visual', 'outside_cab',        'Mirrors — clean, no damage, properly adjusted',                                                          false),
+  ( 2, 'visual', 'outside_cab',        'Windows — clean, no damage, front and top',                                                              false),
+  ( 3, 'visual', 'outside_cab',        'Windshield wipers — arm and rubber blade intact',                                                        false),
+  ( 4, 'visual', 'outside_cab',        'Forks — no damage, cracks or misalignment; check welds, locking pins in place and secure',               false),
+  ( 5, 'visual', 'outside_cab',        'Warning decals — present, legible, not damaged',                                                         false),
+  ( 6, 'visual', 'outside_cab',        'Tyres — no damage, bulges, correct ply rating',                                                          false),
+  ( 7, 'visual', 'outside_cab',        'Wheels — no loose lug bolts, bent rims or cracks',                                                       false),
+  ( 8, 'visual', 'outside_cab',        'Differentials — no oil leaks or cracks in housing',                                                      false),
+  ( 9, 'visual', 'outside_cab',        'Guards and covers — no damage, all in place',                                                            false),
+  (10, 'visual', 'outside_cab',        'Steps and handrail — no damage, clean',                                                                  false),
+  (11, 'visual', 'outside_cab',        'Stabiliser arms, cylinders, pads — no damage or oil leaks, cylinder rod condition, no missing bolts',    false),
+  (12, 'visual', 'outside_cab',        'Battery / terminals — cable connections secure, no water ingress, clean — no corrosion',                 false),
+  (13, 'visual', 'outside_cab',        'Overall machine — no loose/missing nuts or bolts, guards secure, no damage, clean',                      false),
+  (14, 'visual', 'engine_compartment', 'Air filter — check restriction indicator',                                                               false),
+  (15, 'visual', 'engine_compartment', 'Radiator fin — no blockage, leaks; clean',                                                                false),
+  (16, 'visual', 'engine_compartment', 'All hoses — no cracks, wear spots or leaks',                                                              false),
+  (17, 'visual', 'engine_compartment', 'All belts — check tightness, wear, cracks, delamination',                                                false),
+  (18, 'visual', 'engine_compartment', 'Overall engine compartment — no rubbish or dirt build-up, no leaks',                                     false),
+  (19, 'visual', 'inside_cab',         'ROPS or FOPS — no damage, no loose bolts',                                                                false),
+  (20, 'visual', 'inside_cab',         'Seat — adjustment and pedal travel correct',                                                              false),
+  -- Function checks 21–29, 31 (single tick — no G/P split)
+  (21, 'function', 'inside_cab', 'Seat belt & mounting — no damage or wear, adjusts and functions correctly',                                   false),
+  (22, 'function', 'inside_cab', 'Fire extinguisher — charge OK, no damage, inspection card in date',                                            false),
+  (23, 'function', 'inside_cab', 'Horn, backup alarm, lights, wipers — proper function',                                                          false),
+  (24, 'function', 'inside_cab', 'Controls, gauge lenses — proper function, clean',                                                               false),
+  (25, 'function', 'inside_cab', 'Overall cab — interior cleanliness',                                                                            false),
+  (26, 'function', 'driver',     'Training — do you have a current CPCS card for the item of plant you are operating?',                          false),
+  (27, 'function', 'driver',     'Familiarisation — are you familiar with the model of telehandler, its functions and controls, and any attachments you are using?', false),
+  (28, 'function', 'driver',     'Supervision — do you know who your supervisor is?',                                                            false),
+  (29, 'function', 'driver',     'Fit and well to carry out work — are you?',                                                                    false),
+  (31, 'function', 'accessories','Slings, bin handlers, chains etc — suitable storage, free from damage, good condition',                        false)
 ON CONFLICT (item_number) DO UPDATE SET
   description = EXCLUDED.description,
   category    = EXCLUDED.category,
   check_type  = EXCLUDED.check_type,
   has_gp      = EXCLUDED.has_gp;
+
+DELETE FROM check_items WHERE item_number = 30;
 
 
 -- ===========================================================

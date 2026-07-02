@@ -5,53 +5,50 @@ import SupervisorSignoffModal from "../../components/SupervisorSignoffModal";
 const BRAND = "#d02a35";
 
 // ─── Check item definitions ───────────────────────────────────────────────────
+// Wording and item numbers must match the printed rows on the PL054-OP-V3
+// Telehandler Inspection Checklist template (see lib/generateReport.js VIS_ROWS /
+// FUNC_ROWS) — the PDF stamps results/comments by item_number onto fixed
+// coordinates for these exact rows, so the two must stay in sync.
 const SECTIONS = [
-  { id: "documentation", label: "Documentation", emoji: "📋", items: [
-    { id: 1, text: "Statutory examination in date (LOLER)" },
-    { id: 2, text: "Operator manual present and accessible" },
-    { id: 3, text: "Pre-use inspection record up to date" },
+  { id: "outside_cab", label: "On the Machine, Outside the Cab", emoji: "🚜", items: [
+    { id: 1,  text: "Mirrors — clean, no damage, properly adjusted" },
+    { id: 2,  text: "Windows — clean, no damage, front and top" },
+    { id: 3,  text: "Windshield wipers — arm and rubber blade intact" },
+    { id: 4,  text: "Forks — no damage, cracks or misalignment; check welds, locking pins in place and secure" },
+    { id: 5,  text: "Warning decals — present, legible, not damaged" },
+    { id: 6,  text: "Tyres — no damage, bulges, correct ply rating" },
+    { id: 7,  text: "Wheels — no loose lug bolts, bent rims or cracks" },
+    { id: 8,  text: "Differentials — no oil leaks or cracks in housing" },
+    { id: 9,  text: "Guards and covers — no damage, all in place" },
+    { id: 10, text: "Steps and handrail — no damage, clean" },
+    { id: 11, text: "Stabiliser arms, cylinders, pads — no damage or oil leaks, cylinder rod condition, no missing bolts" },
+    { id: 12, text: "Battery / terminals — cable connections secure, no water ingress, clean — no corrosion" },
+    { id: 13, text: "Overall machine — no loose/missing nuts or bolts, guards secure, no damage, clean" },
   ]},
-  { id: "tyres_wheels", label: "Tyres / Wheels", emoji: "🔧", items: [
-    { id: 4, text: "Tyre condition — no cuts, bulges or foreign objects" },
-    { id: 5, text: "Wheel nuts / bolts secure, no damaged rims" },
+  { id: "engine_compartment", label: "Engine Compartment", emoji: "⚙️", items: [
+    { id: 14, text: "Air filter — check restriction indicator" },
+    { id: 15, text: "Radiator fin — no blockage, leaks; clean" },
+    { id: 16, text: "All hoses — no cracks, wear spots or leaks" },
+    { id: 17, text: "All belts — check tightness, wear, cracks, delamination" },
+    { id: 18, text: "Overall engine compartment — no rubbish or dirt build-up, no leaks" },
   ]},
-  { id: "engine_power", label: "Engine / Power Source", emoji: "⚙️", items: [
-    { id: 6, text: "Fuel level adequate for planned work" },
-    { id: 7, text: "Engine oil and coolant levels correct" },
-    { id: 8, text: "No fluid leaks visible on ground beneath machine" },
-  ]},
-  { id: "hydraulics", label: "Hydraulics", emoji: "💧", items: [
-    { id: 9,  text: "Hydraulic oil level correct" },
-    { id: 10, text: "No hydraulic leaks — hoses, cylinders, connections" },
-  ]},
-  { id: "boom_attachment", label: "Boom & Attachment", emoji: "🔱", items: [
-    { id: 11, text: "Boom — no cracks, damage, wear or misalignment" },
-    { id: 12, text: "Boom hoses and chains — condition, routing correct" },
-    { id: 13, text: "Attachment secure, correct type, no visible damage" },
-    { id: 14, text: "Attachment locking pins / retention devices secure" },
-    { id: 15, text: "Headboard / forks / bucket — no cracks, bends or wear" },
-  ]},
-  { id: "bodywork_safety", label: "Bodywork & Safety Devices", emoji: "🏗️", items: [
-    { id: 16, text: "Cab — seat, mirrors, windows, wipers undamaged" },
-    { id: 17, text: "ROPS/FOPS structure — secure, no cracks or damage" },
-    { id: 18, text: "Counterweight — secure and undamaged" },
-    { id: 19, text: "Seat belt / operator restraint — condition and function" },
-    { id: 20, text: "Lights and beacon present and working (if applicable)" },
+  { id: "inside_cab", label: "Inside the Cab", emoji: "🪑", items: [
+    { id: 19, text: "ROPS or FOPS — no damage, no loose bolts" },
+    { id: 20, text: "Seat — adjustment and pedal travel correct" },
   ]},
 ];
 
 const FUNCTION_CHECKS = [
-  { id: 21, text: "Engine start — normal operation, no warning lights" },
-  { id: 22, text: "Drive — forward, reverse, steering response correct" },
-  { id: 23, text: "Brakes — service and parking brake effective" },
-  { id: 24, text: "Boom lift — smooth, correct speed, holds position" },
-  { id: 25, text: "Boom lower — smooth, controlled descent" },
-  { id: 26, text: "Boom extend — smooth, full travel, no binding" },
-  { id: 27, text: "Boom retract — smooth, full travel" },
-  { id: 28, text: "Tilt — forward and back, smooth operation" },
-  { id: 29, text: "Horn — audible and functioning" },
-  { id: 30, text: "Audible travel / reversing alarm working" },
-  { id: 31, text: "Slings, bin handlers, chains etc — Suitable storage, free from damage, good condition" },
+  { id: 21, text: "Seat belt & mounting — no damage or wear, adjusts and functions correctly" },
+  { id: 22, text: "Fire extinguisher — charge OK, no damage, inspection card in date" },
+  { id: 23, text: "Horn, backup alarm, lights, wipers — proper function" },
+  { id: 24, text: "Controls, gauge lenses — proper function, clean" },
+  { id: 25, text: "Overall cab — interior cleanliness" },
+  { id: 26, text: "Training — do you have a current CPCS card for the item of plant you are operating?" },
+  { id: 27, text: "Familiarisation — are you familiar with the model of telehandler, its functions and controls, and any attachments you are using?" },
+  { id: 28, text: "Supervision — do you know who your supervisor is?" },
+  { id: 29, text: "Fit and well to carry out work — are you?" },
+  { id: 31, text: "Slings, bin handlers, chains etc — suitable storage, free from damage, good condition" },
 ];
 
 const ALL_VISUAL_ITEMS = SECTIONS.flatMap(s => s.items);
