@@ -306,7 +306,6 @@ export default function CheckPage({ forkliftId }) {
 
   // Step 0
   const [operatorName, setOperatorName] = useState("");
-  const [palCard, setPalCard]           = useState("");
   const [forkOwner, setForkOwner]       = useState("");
 
   // Step 1 — visual results
@@ -529,7 +528,6 @@ export default function CheckPage({ forkliftId }) {
           inspection_date: today,
           day_of_week:     getDayOfWeek(today),
           operator_name:   operatorName.trim(),
-          pal_card_number: palCard.trim() || null,
           forklift_owner:  forkOwner.trim() || null,
           initialled:      true,
           daily_status:    dailyStatus,
@@ -774,7 +772,6 @@ export default function CheckPage({ forkliftId }) {
             <ThoroughExamCard forklift={forklift} />
             <div style={card}>
               <Field label="Full Name *" value={operatorName} onChange={setOperatorName} placeholder="Enter your full name" />
-              <Field label="Operator Card / PAL Number" value={palCard} onChange={setPalCard} placeholder="Optional" />
               <Field label="Machine Owner (if hire)" value={forkOwner} onChange={setForkOwner} placeholder="Optional — hire company name" />
             </div>
             <button style={btnStyle(BRAND, !operatorName.trim())}
@@ -886,7 +883,6 @@ export default function CheckPage({ forkliftId }) {
                 ["Machine",          forklift?.machine_ref],
                 ["Site",             forklift?.sites?.name],
                 ["Operator",         operatorName],
-                palCard && ["Operator Card", palCard],
                 ["Date",             fmtDateGB(todayStr())],
                 ["Visual checks",    `${ALL_VISUAL_ITEMS.length} items`],
                 ["Function checks",  `${FUNCTION_CHECKS.length} items`],
