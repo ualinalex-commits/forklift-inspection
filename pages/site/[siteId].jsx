@@ -181,7 +181,7 @@ function ReportsPanel({ forkliftId }) {
           {sheets?.map(s => (
             <div key={s.week_commencing} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.35rem 0", borderBottom:"1px solid #f3f4f6" }}>
               <span style={{ fontSize:"0.8rem", color:"#374151" }}>W/c {fmtDateGB(s.week_commencing)}</span>
-              <a href={s.pdf_url} target="_blank" rel="noreferrer" style={{ fontSize:"0.78rem", color:BRAND, fontWeight:700 }}>Download PDF ↗</a>
+              <a href={`${s.pdf_url}?t=${Date.now()}`} target="_blank" rel="noreferrer" style={{ fontSize:"0.78rem", color:BRAND, fontWeight:700 }}>Download PDF ↗</a>
             </div>
           ))}
         </div>
@@ -348,7 +348,7 @@ function ForkliftCard({ forklift, todayEntry, currentPdfUrl, weekSheet, rtRefres
           <div style={{ marginTop:"0.75rem" }}>
             <p style={{ margin:"0 0 0.25rem", fontSize:"0.8rem", fontWeight:700, color:"#374151" }}>This Week's Report</p>
             {currentPdfUrl
-              ? <a href={currentPdfUrl} target="_blank" rel="noreferrer" style={{ fontSize:"0.82rem", color:BRAND, fontWeight:700 }}>Download PDF ↗</a>
+              ? <a href={`${currentPdfUrl}?t=${Date.now()}`} target="_blank" rel="noreferrer" style={{ fontSize:"0.82rem", color:BRAND, fontWeight:700 }}>Download PDF ↗</a>
               : <span style={{ fontSize:"0.8rem", color:"#9ca3af" }}>No report yet</span>
             }
           </div>

@@ -181,7 +181,7 @@ function WeeklyOverviewCard({ forkliftId }) {
       <WeeklyTrackerRow forkliftId={forkliftId} />
       <div style={{ marginTop: "0.75rem" }}>
         {pdfUrl ? (
-          <a href={pdfUrl} target="_blank" rel="noreferrer"
+          <a href={`${pdfUrl}?t=${Date.now()}`} target="_blank" rel="noreferrer"
             style={{ display: "block", textAlign: "center", padding: "0.6rem", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", color: BRAND, textDecoration: "none" }}>
             📄 View This Week's Report
           </a>
@@ -592,12 +592,20 @@ export default function CheckPage({ forkliftId }) {
         await supabase.from("defect_log").insert(defectRows);
       }
 
-      // Trigger PDF (fire and forget)
-      fetch("/api/trigger-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forklift_id: forkliftId, sheet_id: sheetId }),
-      }).catch(() => {});
+      // Trigger PDF and confirm it actually completed before moving on
+      try {
+        const pdfRes = await fetch("/api/trigger-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ forklift_id: forkliftId, sheet_id: sheetId }),
+        });
+        const pdfJson = await pdfRes.json().catch(() => ({}));
+        if (!pdfRes.ok || !pdfJson.ok) {
+          console.error("PDF generation failed:", pdfJson.error || pdfRes.status);
+        }
+      } catch (err) {
+        console.error("PDF trigger request failed:", err);
+      }
 
       setDoneEntry({ ...entry, faultIds, faultDetails: { ...faultDetails } });
       setPageStatus("done");
