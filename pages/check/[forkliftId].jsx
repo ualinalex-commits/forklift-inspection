@@ -109,6 +109,90 @@ function ThoroughExamCard({ forklift }) {
   );
 }
 
+// ─── Weekly tracker + report link (same style as site dashboard) ─────────────
+function getWeekDates() {
+  const today = new Date();
+  const dow = today.getDay();
+  const fromMon = (dow + 6) % 7;
+  const mon = new Date(today);
+  mon.setDate(today.getDate() - fromMon);
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    return toLocalDateStr(d);
+  });
+}
+
+function WeeklyTrackerRow({ forkliftId }) {
+  const [entryMap, setEntryMap] = useState({});
+  const weekDates = getWeekDates();
+  const today = todayStr();
+
+  useEffect(() => {
+    supabase.from("daily_inspection_entries")
+      .select("id, inspection_date")
+      .eq("forklift_id", forkliftId)
+      .in("inspection_date", weekDates)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(e => { map[e.inspection_date] = e; });
+        setEntryMap(map);
+      });
+  }, [forkliftId]);
+
+  const dayLabels = ["M","T","W","T","F","S"];
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      {weekDates.map((date, i) => {
+        const done = !!entryMap[date];
+        const past = date < today;
+        const isToday = date === today;
+        const bg = done ? "#15803d" : past ? "#b91c1c" : "#e5e7eb";
+        return (
+          <div key={date} title={date} style={{ width: 28, height: 28, borderRadius: 6,
+            background: bg, display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "0.7rem", fontWeight: 800, color: done || past ? "#fff" : "#9ca3af",
+            border: isToday ? `2px solid ${BRAND}` : "2px solid transparent" }}>
+            {dayLabels[i]}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WeeklyOverviewCard({ forkliftId }) {
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const weekCommencing = getWeekDates()[0];
+    supabase.from("weekly_inspection_sheets")
+      .select("pdf_url")
+      .eq("forklift_id", forkliftId)
+      .eq("week_commencing", weekCommencing)
+      .maybeSingle()
+      .then(({ data }) => { setPdfUrl(data?.pdf_url || null); setLoaded(true); });
+  }, [forkliftId]);
+
+  return (
+    <div style={{ ...card, marginBottom: "1rem" }}>
+      <p style={{ margin: "0 0 0.5rem", fontWeight: 800, color: "#111827", fontSize: "0.9rem" }}>This Week</p>
+      <WeeklyTrackerRow forkliftId={forkliftId} />
+      <div style={{ marginTop: "0.75rem" }}>
+        {pdfUrl ? (
+          <a href={pdfUrl} target="_blank" rel="noreferrer"
+            style={{ display: "block", textAlign: "center", padding: "0.6rem", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", color: BRAND, textDecoration: "none" }}>
+            📄 View This Week's Report
+          </a>
+        ) : (
+          <span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>{loaded ? "Report not generated yet" : "Loading report…"}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Toggle button (3-way: pass / fail / na) ──────────────────────────────────
 function ToggleGroup({ value, onChange, highlighted }) {
   const opts = [
@@ -566,6 +650,8 @@ export default function CheckPage({ forkliftId }) {
           </div>
         )}
 
+        <WeeklyOverviewCard forkliftId={forkliftId} />
+
         {/* Supervisor sign-off — one per forklift per week */}
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "1rem" }}>
           <p style={{ margin: "0 0 0.5rem", fontWeight: 800, color: "#111827", fontSize: "0.9rem" }}>Supervisor Sign-off</p>
@@ -679,6 +765,7 @@ export default function CheckPage({ forkliftId }) {
         {step === 0 && (
           <>
             <h2 style={sectionTitle}>Operator Details</h2>
+            <WeeklyOverviewCard forkliftId={forkliftId} />
             <ThoroughExamCard forklift={forklift} />
             <div style={card}>
               <Field label="Full Name *" value={operatorName} onChange={setOperatorName} placeholder="Enter your full name" />
